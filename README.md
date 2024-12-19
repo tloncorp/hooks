@@ -26,7 +26,7 @@ A hook looks like this:
 - `config` the configurations for each channel for this hook
 
 Hooks are standalone, meaning that if you add a hook it has the potential to work across any channel. We store hooks with this structure:
-```
+```hoon
 ++  hooks
   $:  hooks=(map id-hook hook)
       order=(map nest (list id-hook))
@@ -43,7 +43,7 @@ Hooks are standalone, meaning that if you add a hook it has the potential to wor
 Order tells us which hooks to run and in what order. This means that hooks are meant to be a "pipeline" whereby each hook returns an event that gets passed to the next hook. Or, potentially the hook signals to "stop", more on that later.
 
 Since hooks are functions that means they take in arguments and return a result:
-```
+```hoon
 +$  args
   $:  =event
       =bowl
@@ -58,8 +58,8 @@ Since hooks are functions that means they take in arguments and return a result:
 ```
 
 ### args
-We pass two arguments to each hook, an `event` and a `context`. An `event` looks like this:
-```
+We pass two arguments to each hook, an `event` and a `bowl`. An `event` looks like this:
+```hoon
 +$  event
   $%  [%on-post on-post]
       [%on-reply on-reply]
@@ -77,7 +77,7 @@ So that means we have four different kinds of events:
 In various places in our agent, we invoke all the hooks running for that channel passing it different events. It is up to the hook itself to no-op if it's passed an event it doesn't care about. This means that a hook could potentially respond to all events which is good in case someone wants to offer a more complete "suite" and not have to juggle multiple hooks.
 
 Hooks are also passed a `bowl` which is "ambient" state that is involved:
-```
+```hoon
 +$  bowl
   $:  channel=(unit [=nest v-channel])
       group=(unit group-ui:g)
@@ -108,7 +108,7 @@ Once the hook runs we get an `outcome` which is a wrapper around the data the ho
 `+$  outcome  (each return tang)`
 
 We do this because a hook could need to "error" out and in that case it will only return an error message and no effects/state changes/etc. However, if a hook is successful we'll get the following type:
-```
+```hoon
 +$  return
   $:  $:  result=event-result
           effects=(list effect)
@@ -122,7 +122,7 @@ It has three parts, starting with simplest first:
 `new-state` the new persisted data for this hook which is simply placed back inside the hook itself. This means that a hook can hold things like aggregates, lists of old messages, or maybe even game state!
 
 `result` whether to pass the event along or not, and a new potentially transformed event to be passed to any subsequent hooks
-```
+```hoon
 +$  result
   $%  [%allowed new=event]
       [%denied msg=(unit cord)]
@@ -132,7 +132,7 @@ It has three parts, starting with simplest first:
 If the hook returns `denied` it can optionally give a message about why. This will give us a way to return feedback to the user, but there currently is no mechanism to use this (hopefully soon).
 
 `effects` external actions to be taken with other agents, think of this as most of the current Tlon "API"
-```
+```hoon
 +$  effect
   $%  [%channels =a-channels]
       [%groups =action:g]
@@ -162,7 +162,7 @@ Overall, I'm pretty confident the structure we've come up with allow us a huge d
 
 ## Usage
 We have the following API:
-```
+```hoon
 +$  id  @uv
 +$  origin  $@(~ nest)
 +$  config  (map @t *)
@@ -214,8 +214,8 @@ This will run your hook on it's own with the data you provide and spit out the r
 
 **Going one by one:**
 `-groups!hook-add 'name' '<src>'` this thread creates a hook and grabs the ID generated from it's creation so you can operate on it further. `src` should be the text of a `hoon` that looks like this:
-```
-|=  [=event:h context:h]
+```hoon
+|=  [=event:h bowl:h]
 ^-  outcome:h
 =-  &+[[[%allowed event] -] state.hook]
 ?.  ?=(%cron -.event)  ~
@@ -231,7 +231,7 @@ This will run your hook on it's own with the data you provide and spit out the r
 `[%channels %channel nest.u.channel %post %del id-post]
 ```
 
-You can see that the hook is a gate which takes an `event` and `context`. It returns an `outcome`.
+You can see that the hook is a gate which takes an `event` and `bowl`. It returns an `outcome`.
 This hook is meant to be run as a `cron` on a schedule to remove messages older than the `delay` in the config.
 
 We handle config using raw nouns, which means that you need to "clam" `;;(...)` them to get the actual type you want to work with. We do that on this line:
@@ -253,17 +253,17 @@ The last three segments make up the `nest` `chat/~bospur-davmyl-nocsyx-lassul/ne
 
 `-groups!hook-configure id nest (my ['emoji' !>(':clown_face:')] ['delay' !>(~s5)] ~)` id and nest are the same as the previous threads. The last argument is a `config` which is of type `(map @t *)` meaning you can put any noun you want inside. These are used to control variables within hooks so that they can be more general. In this example:
 
-```
+```hoon
 (my ['emoji' !>(':clown_face:')] ['delay' !>(~s5)] ~)
 ```
 
 we're setting the value for two pieces of config, one the emoji to react with and the next is a time to wait before reacting. when we're in the hook we access config like this:
 
-```
-|=  [=event:h =context:h]
+```hoon
+|=  [=event:h =bowl:h]
 ^-  outcome:h
-=+  ;;(emoji=cord (~(gut by config.context) 'emoji' ':thumbsup:'))
-=+  ;;(delay=@dr (~(gut by config.context) 'delay' ~s30))
+=+  ;;(emoji=cord (~(gut by config.bowl) 'emoji' ':thumbsup:'))
+=+  ;;(delay=@dr (~(gut by config.bowl) 'delay' ~s30))
 ::  ...
 ```
 
@@ -281,7 +281,7 @@ These threads use id and nest similar to the above. The final argument is whethe
 -groups!hooks-run <event> [%context some-context] <src>
 ```
 The final threads provided are so that you can test compiling and running your hook without actually affecting a channel. You first pass an event which looks like:
-```
+```hoon
 ::
 ::  $event: the data associated with the trigger of a hook
 ::
@@ -320,14 +320,14 @@ the `v-post`, `v-reply`, `essay`, `memo` and `react` types can be found here: ht
 
 next you pass either an `%origin` or `%context`, if passing `%origin`, you need to give an `origin` which looks like `$@(~ nest)` and optionally you can give a vase for state and a config. these last two are unitized so you'll have to pass them like:
 
-```
+```hoon
 [%origin origin `!>(<some state>) `(my ['some-config' ~s30] ~)]
 ```
 
-this will use the `origin` you give to generate a `context` using data from the agent, which is passed to the hook as an argument. alternatively you can pass a full `context` if you need to control the exactly what data is in the `context`. you can do so like:
+this will use the `origin` you give to generate a `bowl` using data from the agent, which is passed to the hook as an argument. alternatively you can pass a full `bowl` if you need to control the exactly what data is in the `bowl`. you can do so like:
 
-```
-[%context context]
+```hoon
+[%context bowl:h]
 ```
 
 Finally, you pass the source code of the hook as a hoon `cord` or `@t`. The easiest way to do so is to start a multi-line cord in the dojo with `'''` then paste your source code, hit enter and then put another `'''` . this will combine your source code into a single line cord that you can pass to the thread.
