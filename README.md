@@ -3,7 +3,7 @@
 hooks are hoon functions that modify events, cause effects, and/or build state for channels.
 
 A hook looks like this:
-```
+```hoon
 ++  hook
   $:  id=id-hook
       version=%0
